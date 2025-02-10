@@ -1,13 +1,17 @@
-name: CD Pipeline
+name: CI/CD Pipeline for Render
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
 
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
+    name: test
 
     steps:
       - name: Checkout repository
@@ -23,9 +27,29 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Start FastAPI Application in Codespaces
+      - name: Run tests
         run: |
-          uvicorn main:app --host 0.0.0.0 --port 8000 --reload &
+          pytest
+
+  deploy:
+    runs-on: ubuntu-latest
+    name: deploy
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Deploy to Render
+        env:
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+        run: |
+          curl -X POST "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys" \
+          -H "Authorization: Bearer $RENDER_API_KEY" \
+          -H "Content-Type: application/json" \
+          -d '{}'
 
       - name: Install and Configure Nginx
         run: |
@@ -33,7 +57,7 @@ jobs:
           sudo apt install -y nginx
           echo 'server {
               listen 80;
-              server_name localhost;
+              server_name _;
               location / {
                   proxy_pass http://127.0.0.1:8000;
                   proxy_set_header Host $host;
@@ -41,7 +65,6 @@ jobs:
                   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                   proxy_set_header X-Forwarded-Proto $scheme;
               }
-          }' | sudo tee /etc/nginx/sites-available/fastapi
-          sudo ln -s /etc/nginx/sites-available/fastapi /etc/nginx/sites-enabled/
+          }' | sudo tee /etc/nginx/sites-available/default
           sudo nginx -t
           sudo systemctl restart nginx
