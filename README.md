@@ -129,6 +129,141 @@ The API includes proper error handling for:
 - Invalid genre types
 - Malformed requests
 
+# Setup and Deployment Instructions
+
+## Prerequisites
+Ensure you have the following before proceeding:
+- A **GitHub repository** with your FastAPI application.
+- A **Render account** ([Sign up here](https://render.com/)).
+- **GitHub Actions configured** to deploy to Render.
+
+## 1. Setting Up Render
+### **Create a Web Service on Render**
+1. Go to the [Render Dashboard](https://dashboard.render.com/).
+2. Click **New → Web Service**.
+3. Select **"Deploy from a Git Repository"**.
+4. Connect your **GitHub repository**.
+5. Choose the **"main" branch"** for auto-deployment.
+6. Set the **Build Command**:
+   ```sh
+   pip install -r requirements.txt
+   ```
+7. Set the **Start Command**:
+   ```sh
+   uvicorn main:app --host 0.0.0.0 --port 8000
+   ```
+8. Click **Create Web Service**.
+
+## 2. Configuring GitHub Secrets for Deployment
+1. Go to **GitHub Repository → Settings → Secrets and Variables → Actions**.
+2. Click **"New repository secret"**.
+3. Add the following secrets:
+   - **`RENDER_SERVICE_ID`**: Get it from the Render dashboard URL (`srv-xxxxxxx`).
+   - **`RENDER_API_KEY`**: Generate an API key in **Render → Settings → API Keys**.
+
+## 3. Setting Up GitHub Actions for CI/CD
+### **Configure GitHub Actions Workflow**
+Ensure your `.github/workflows/render-cicd.yml` file contains:
+```yaml
+name: CI/CD Pipeline for Render
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: |
+          pytest
+
+  deploy:
+    runs-on: ubuntu-latest
+    name: deploy
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Deploy to Render
+        env:
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+        run: |
+          curl -X POST "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys" \
+          -H "Authorization: Bearer $RENDER_API_KEY" \
+          -H "Content-Type: application/json" \
+          -d '{}'
+```
+
+## 4. Deploying the Application
+### **Triggering a Deployment**
+- **Automatic Deployment**: Any push to the `main` branch triggers deployment.
+- **Manual Deployment**: Run the following GitHub Actions workflow.
+
+### **Checking Deployment Status**
+1. Go to **Render Dashboard → Your Service**.
+2. Check the **Deploy Logs**.
+3. Visit your deployed application at:
+   ```
+   https://your-app.onrender.com
+   ```
+
+## 5. Setting Up Nginx as a Reverse Proxy
+### **Modify `nginx.conf`**
+Ensure your Nginx config is set up correctly:
+```nginx
+server {
+    listen 80;
+    server_name _;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+### **Restart Nginx**
+Run the following commands:
+```sh
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+## 6. Verifying the Deployment
+- Check your **Render Logs** for errors.
+- Use **Postman or Curl** to test API endpoints.
+
+## 🎉 Your FastAPI application is now deployed on Render with GitHub Actions and Nginx!
+
+
 ## Contributing
 
 1. Fork the repository
